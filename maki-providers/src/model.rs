@@ -10,7 +10,9 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 
 use crate::provider::ProviderKind;
-use crate::providers::{anthropic, dynamic, google, mistral, ollama, openai, synthetic, zai};
+use crate::providers::{
+    anthropic, dynamic, github_copilot, google, mistral, ollama, openai, synthetic, zai,
+};
 
 const PER_MILLION: f64 = 1_000_000.0;
 
@@ -114,6 +116,7 @@ pub fn models_for_provider(provider: ProviderKind) -> &'static [ModelEntry] {
         ProviderKind::Mistral => mistral::models(),
         ProviderKind::Google => google::models(),
         ProviderKind::Zai | ProviderKind::ZaiCodingPlan => zai::models(),
+        ProviderKind::GithubCopilot => github_copilot::models(),
         ProviderKind::Synthetic => synthetic::models(),
     }
 }
@@ -407,6 +410,15 @@ mod tests {
         let model = Model::from_spec("ollama/my-custom-model").unwrap();
         assert_eq!(model.provider, ProviderKind::Ollama);
         assert_eq!(model.id, "my-custom-model");
+        assert_eq!(model.tier, ModelTier::Medium);
+        assert_eq!(model.family, ModelFamily::Generic);
+    }
+
+    #[test]
+    fn copilot_arbitrary_model_accepted() {
+        let model = Model::from_spec("github-copilot/my-future-model").unwrap();
+        assert_eq!(model.provider, ProviderKind::GithubCopilot);
+        assert_eq!(model.id, "my-future-model");
         assert_eq!(model.tier, ModelTier::Medium);
         assert_eq!(model.family, ModelFamily::Generic);
     }

@@ -13,7 +13,7 @@ use crate::{
 
 const RESPONSES_PATH: &str = "/responses";
 
-pub(crate) fn build_body(
+pub fn build_body(
     model: &crate::model::Model,
     messages: &[Message],
     system: &str,
@@ -35,7 +35,7 @@ pub(crate) fn build_body(
     body
 }
 
-pub(crate) fn convert_input(messages: &[Message]) -> Value {
+pub fn convert_input(messages: &[Message]) -> Value {
     let mut input = Vec::new();
 
     for msg in messages {
@@ -115,7 +115,7 @@ pub(crate) fn convert_input(messages: &[Message]) -> Value {
     Value::Array(input)
 }
 
-pub(crate) fn convert_tools(anthropic_tools: &Value) -> Value {
+pub fn convert_tools(anthropic_tools: &Value) -> Value {
     let Some(tools) = anthropic_tools.as_array() else {
         return json!([]);
     };
@@ -136,7 +136,7 @@ pub(crate) fn convert_tools(anthropic_tools: &Value) -> Value {
     )
 }
 
-pub(crate) async fn do_stream(
+pub async fn do_stream(
     client: &HttpClient,
     model: &crate::model::Model,
     body: &Value,
@@ -186,7 +186,7 @@ struct ToolAccumulator {
     arguments: String,
 }
 
-pub(crate) async fn parse_sse(
+pub async fn parse_sse(
     reader: impl AsyncBufRead + Unpin,
     event_tx: &Sender<ProviderEvent>,
     stream_timeout: Duration,

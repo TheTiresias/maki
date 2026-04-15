@@ -10,6 +10,7 @@ use crate::model::{Model, ModelFamily, models_for_provider};
 use crate::providers::Timeouts;
 use crate::providers::anthropic::Anthropic;
 use crate::providers::dynamic;
+use crate::providers::github_copilot::GithubCopilot;
 use crate::providers::google::Google;
 use crate::providers::mistral::Mistral;
 use crate::providers::ollama::Ollama;
@@ -24,6 +25,8 @@ pub enum ProviderKind {
     Anthropic,
     #[strum(serialize = "openai")]
     OpenAi,
+    #[strum(serialize = "github-copilot")]
+    GithubCopilot,
     Google,
     Ollama,
     Mistral,
@@ -37,6 +40,7 @@ impl ProviderKind {
         match self {
             Self::Anthropic => "Anthropic",
             Self::OpenAi => "OpenAI",
+            Self::GithubCopilot => "GitHub Copilot",
             Self::Google => "Google",
             Self::Ollama => "Ollama",
             Self::Mistral => "Mistral",
@@ -50,6 +54,7 @@ impl ProviderKind {
         match self {
             Self::Anthropic => "ANTHROPIC_API_KEY",
             Self::OpenAi => "OPENAI_API_KEY",
+            Self::GithubCopilot => "COPILOT_GITHUB_TOKEN",
             Self::Google => "GEMINI_API_KEY",
             Self::Ollama => "OLLAMA_API_KEY",
             Self::Mistral => "MISTRAL_API_KEY",
@@ -62,6 +67,7 @@ impl ProviderKind {
         match self {
             Self::Anthropic => "https://api.anthropic.com/v1/messages",
             Self::OpenAi => "https://api.openai.com/v1",
+            Self::GithubCopilot => "https://api.individual.githubcopilot.com",
             Self::Google => "https://generativelanguage.googleapis.com/v1beta",
             Self::Ollama => "http://localhost:11434/v1",
             Self::Mistral => "https://api.mistral.ai/v1",
@@ -74,7 +80,7 @@ impl ProviderKind {
     pub const fn supports_thinking(self) -> bool {
         matches!(
             self,
-            Self::Anthropic | Self::Google | Self::Mistral | Self::Synthetic
+            Self::Anthropic | Self::Google | Self::Mistral | Self::Synthetic | Self::GithubCopilot
         )
     }
 
@@ -88,6 +94,9 @@ impl ProviderKind {
             Self::Synthetic => {
                 Some("Reasoning effort support (low/medium/high), open-weight models")
             }
+            Self::GithubCopilot => {
+                Some("GitHub Copilot proxy — Claude, GPT, Gemini models via OAuth")
+            }
             _ => None,
         }
     }
@@ -97,7 +106,7 @@ impl ProviderKind {
             Self::Anthropic => ModelFamily::Claude,
             Self::OpenAi => ModelFamily::Gpt,
             Self::Google => ModelFamily::Gemini,
-            Self::Ollama => ModelFamily::Generic,
+            Self::Ollama | Self::GithubCopilot => ModelFamily::Generic,
             Self::Mistral => ModelFamily::Generic,
             Self::Zai | Self::ZaiCodingPlan => ModelFamily::Glm,
             Self::Synthetic => ModelFamily::Synthetic,
@@ -105,13 +114,14 @@ impl ProviderKind {
     }
 
     pub const fn accepts_arbitrary_models(self) -> bool {
-        matches!(self, Self::Ollama | Self::Google)
+        matches!(self, Self::Ollama | Self::Google | Self::GithubCopilot)
     }
 
     pub fn create(self, timeouts: Timeouts) -> Result<Box<dyn Provider>, AgentError> {
         match self {
             Self::Anthropic => Ok(Box::new(Anthropic::new(timeouts)?)),
             Self::OpenAi => Ok(Box::new(OpenAi::new(timeouts)?)),
+            Self::GithubCopilot => Ok(Box::new(GithubCopilot::new(timeouts)?)),
             Self::Google => Ok(Box::new(Google::new(timeouts)?)),
             Self::Ollama => Ok(Box::new(Ollama::new(timeouts)?)),
             Self::Mistral => Ok(Box::new(Mistral::new(timeouts)?)),

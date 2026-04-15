@@ -44,6 +44,20 @@ Defaults: claude-haiku-4-5 (weak), claude-sonnet-4-6 (medium), claude-opus-4-6 (
 
 Defaults: gpt-5.4-nano (weak), gpt-4.1 (medium), gpt-5.4 (strong)
 
+### GitHub Copilot
+
+- **Env var**: `COPILOT_GITHUB_TOKEN`
+- **API**: `https://api.individual.githubcopilot.com`
+- **Features**: GitHub Copilot proxy — Claude, GPT, Gemini models via OAuth
+
+| Tier | Models | Pricing (in/out per 1M tokens) | Context |
+|------|--------|-------------------------------|---------|
+| Weak | **claude-haiku-4.5, claude-haiku-4-5** (default), gpt-4o | $0.00 / $0.00 | 200K ctx / 64K out |
+| Medium | **claude-sonnet-4, claude-sonnet-4.5, claude-sonnet-4-5, claude-sonnet-4-6** (default), gpt-4.1-mini, gpt-4.1, o4-mini, gpt-5.1-codex-mini, gemini-2.5-pro, gemini-3-flash-preview | $0.00 / $0.00 | 200K ctx / 64K out |
+| Strong | **claude-opus-4.5, claude-opus-4-5, claude-opus-4-6** (default), o3, gpt-5.1-codex, gpt-5.2-codex, gpt-5.3-codex | $0.00 / $0.00 | 200K ctx / 64K out |
+
+Defaults: claude-haiku-4.5 (weak), claude-sonnet-4 (medium), claude-opus-4.5 (strong)
+
 ### Google
 
 - **Env var**: `GEMINI_API_KEY`
@@ -135,7 +149,7 @@ To add a custom provider or proxy, drop an executable script into `~/.maki/provi
 
 `resolve` is called each time a new agent spawns, so scripts should read tokens from disk instead of caching them in memory. That way auth changes from other processes get picked up.
 
-The `base` field specifies which built-in provider to inherit the model catalog from. Valid values: `anthropic`, `openai`, `google`, `ollama`, `mistral`, `zai`, `zai-coding-plan`, `synthetic`.
+The `base` field specifies which built-in provider to inherit the model catalog from. Valid values: `anthropic`, `openai`, `github-copilot`, `google`, `ollama`, `mistral`, `zai`, `zai-coding-plan`, `synthetic`.
 
 If your provider serves models not in the base catalog, add a `models` subcommand returning:
 
