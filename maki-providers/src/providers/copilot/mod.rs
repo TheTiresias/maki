@@ -345,8 +345,7 @@ impl CopilotModel {
     }
 
     fn endpoint(&self) -> Endpoint {
-        let prefer_chat = std::env::var("MAKI_COPILOT_PREFER_CHAT")
-            .is_ok_and(|v| v == "1");
+        let prefer_chat = std::env::var("MAKI_COPILOT_PREFER_CHAT").is_ok_and(|v| v == "1");
         if prefer_chat
             && self
                 .supported_endpoints

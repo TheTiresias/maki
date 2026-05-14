@@ -189,7 +189,10 @@ impl Overlay for ModelPicker {
     }
 }
 
-fn parse_model_entry(spec: &str, copilot_endpoints: Option<&HashMap<String, String>>) -> Option<ModelEntry> {
+fn parse_model_entry(
+    spec: &str,
+    copilot_endpoints: Option<&HashMap<String, String>>,
+) -> Option<ModelEntry> {
     let (provider_str, model_id) = spec.split_once('/')?;
 
     let provider_display = if let Ok(kind) = provider_str.parse::<ProviderKind>() {
@@ -233,7 +236,10 @@ mod tests {
     }
 
     #[allow(clippy::type_complexity)]
-    fn test_models() -> (Arc<ArcSwapOption<Vec<String>>>, Arc<ArcSwapOption<HashMap<String, String>>>) {
+    fn test_models() -> (
+        Arc<ArcSwapOption<Vec<String>>>,
+        Arc<ArcSwapOption<HashMap<String, String>>>,
+    ) {
         let models = Arc::new(ArcSwapOption::empty());
         models.store(Some(Arc::new(vec![
             "anthropic/claude-sonnet-4-20250514".into(),
