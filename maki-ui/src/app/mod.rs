@@ -171,6 +171,7 @@ pub struct App {
     pub(crate) permissions: Arc<PermissionManager>,
     pub(super) buf_click: Option<BufClickHandler>,
     pub(crate) lua_event_handle: Option<EventHandle>,
+    pub(crate) copilot_endpoints: Arc<ArcSwapOption<HashMap<String, String>>>,
     subagent_answers: HashMap<String, flume::Sender<String>>,
 }
 
@@ -181,6 +182,7 @@ impl App {
         session: AppSession,
         storage: StateDir,
         available_models: Arc<ArcSwapOption<Vec<String>>>,
+        copilot_endpoints: Arc<ArcSwapOption<HashMap<String, String>>>,
         mcp_reader: McpSnapshotReader,
         lua_command_reader: LuaCommandReader,
         storage_writer: Arc<StorageWriter>,
@@ -203,7 +205,7 @@ impl App {
             task_picker: ListPicker::new(),
             task_picker_original: None,
             theme_picker: ThemePicker::new(),
-            model_picker: ModelPicker::new(available_models),
+            model_picker: ModelPicker::new(available_models, Arc::clone(&copilot_endpoints)),
             mcp_picker: McpPicker::new(mcp_reader),
             session_picker: SessionPicker::new(),
             rewind_picker: RewindPicker::new(),
@@ -242,6 +244,7 @@ impl App {
             permissions,
             buf_click: None,
             lua_event_handle: None,
+            copilot_endpoints,
             subagent_answers: HashMap::new(),
         }
     }

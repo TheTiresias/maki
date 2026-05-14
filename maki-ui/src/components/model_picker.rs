@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use arc_swap::ArcSwapOption;
@@ -53,14 +54,14 @@ pub enum ModelPickerAction {
 
 struct ModelEntry {
     spec: String,
-    id: String,
+    label: String,
     provider_display: &'static str,
     tier: String,
 }
 
 impl PickerItem for ModelEntry {
     fn label(&self) -> &str {
-        &self.id
+        &self.label
     }
 
     fn detail(&self) -> Option<&str> {
@@ -75,14 +76,19 @@ impl PickerItem for ModelEntry {
 pub struct ModelPicker {
     picker: ListPicker<ModelEntry>,
     models: Arc<ArcSwapOption<Vec<String>>>,
+    copilot_endpoints: Arc<ArcSwapOption<HashMap<String, String>>>,
     last_spec_count: usize,
 }
 
 impl ModelPicker {
-    pub fn new(models: Arc<ArcSwapOption<Vec<String>>>) -> Self {
+    pub fn new(
+        models: Arc<ArcSwapOption<Vec<String>>>,
+        copilot_endpoints: Arc<ArcSwapOption<HashMap<String, String>>>,
+    ) -> Self {
         Self {
             picker: ListPicker::new().with_footer_builder(footer_line),
             models,
+            copilot_endpoints,
             last_spec_count: 0,
         }
     }
@@ -90,9 +96,15 @@ impl ModelPicker {
     pub fn open(&mut self, current_spec: &str) {
         let guard = self.models.load();
         let specs = guard.as_deref();
+        let endpoints = self.copilot_endpoints.load();
+        let ep_map = endpoints.as_deref();
         self.last_spec_count = specs.map_or(0, Vec::len);
         let entries: Vec<ModelEntry> = specs
-            .map(|s| s.iter().filter_map(|s| parse_model_entry(s)).collect())
+            .map(|s| {
+                s.iter()
+                    .filter_map(|s| parse_model_entry(s, ep_map))
+                    .collect()
+            })
             .unwrap_or_default();
         let current_idx = entries
             .iter()
@@ -112,11 +124,13 @@ impl ModelPicker {
             return;
         }
         self.last_spec_count = spec_count;
+        let endpoints = self.copilot_endpoints.load();
+        let ep_map = endpoints.as_deref();
         let entries: Vec<ModelEntry> = guard
             .as_deref()
             .unwrap()
             .iter()
-            .filter_map(|s| parse_model_entry(s))
+            .filter_map(|s| parse_model_entry(s, ep_map))
             .collect();
         self.picker.replace_items(entries);
     }
@@ -146,9 +160,9 @@ impl ModelPicker {
             && let Some(entry) = self.picker.selected_item()
         {
             let spec = entry.spec.clone();
-            let id = entry.id.clone();
+            let label = entry.label.clone();
             self.picker
-                .with_item_mut(&id, |e| e.tier = tier.to_string());
+                .with_item_mut(&label, |e| e.tier = tier.to_string());
             return ModelPickerAction::AssignTier(spec, tier);
         }
         match self.picker.handle_key(key) {
@@ -175,7 +189,7 @@ impl Overlay for ModelPicker {
     }
 }
 
-fn parse_model_entry(spec: &str) -> Option<ModelEntry> {
+fn parse_model_entry(spec: &str, copilot_endpoints: Option<&HashMap<String, String>>) -> Option<ModelEntry> {
     let (provider_str, model_id) = spec.split_once('/')?;
 
     let provider_display = if let Ok(kind) = provider_str.parse::<ProviderKind>() {
@@ -188,9 +202,19 @@ fn parse_model_entry(spec: &str) -> Option<ModelEntry> {
         Ok(m) => m.tier.to_string(),
         Err(_) => String::new(),
     };
+
+    let label = if provider_str == "copilot" {
+        copilot_endpoints
+            .and_then(|map| map.get(model_id))
+            .map(|tag| format!("[{tag}] {model_id}"))
+            .unwrap_or_else(|| model_id.to_owned())
+    } else {
+        model_id.to_owned()
+    };
+
     Some(ModelEntry {
         spec: spec.to_string(),
-        id: model_id.to_string(),
+        label,
         provider_display,
         tier,
     })
@@ -208,19 +232,22 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::ALT)
     }
 
-    fn test_models() -> Arc<ArcSwapOption<Vec<String>>> {
+    #[allow(clippy::type_complexity)]
+    fn test_models() -> (Arc<ArcSwapOption<Vec<String>>>, Arc<ArcSwapOption<HashMap<String, String>>>) {
         let models = Arc::new(ArcSwapOption::empty());
         models.store(Some(Arc::new(vec![
             "anthropic/claude-sonnet-4-20250514".into(),
             "anthropic/claude-opus-4-6-20260101".into(),
             "zai/glm-5".into(),
         ])));
-        models
+        let endpoints = Arc::new(ArcSwapOption::empty());
+        (models, endpoints)
     }
 
     #[test]
     fn select_returns_full_spec() {
-        let mut p = ModelPicker::new(test_models());
+        let (models, endpoints) = test_models();
+        let mut p = ModelPicker::new(models, endpoints);
         p.open("");
         let action = p.handle_key(key(KeyCode::Enter));
         assert!(
@@ -231,7 +258,8 @@ mod tests {
     #[test_case(key(KeyCode::Esc)          ; "esc_closes")]
     #[test_case(kb::QUIT.to_key_event()    ; "ctrl_c_closes")]
     fn close_keys(cancel_key: KeyEvent) {
-        let mut p = ModelPicker::new(test_models());
+        let (models, endpoints) = test_models();
+        let mut p = ModelPicker::new(models, endpoints);
         p.open("");
         let action = p.handle_key(cancel_key);
         assert!(matches!(action, ModelPickerAction::Close));
@@ -241,7 +269,8 @@ mod tests {
     #[test]
     fn open_with_no_models_still_opens() {
         let models = Arc::new(ArcSwapOption::empty());
-        let mut p = ModelPicker::new(models);
+        let endpoints = Arc::new(ArcSwapOption::empty());
+        let mut p = ModelPicker::new(models, endpoints);
         p.open("");
         assert!(p.is_open());
     }
@@ -249,7 +278,8 @@ mod tests {
     #[test]
     fn refresh_populates_when_models_arrive() {
         let models = Arc::new(ArcSwapOption::empty());
-        let mut p = ModelPicker::new(models.clone());
+        let endpoints = Arc::new(ArcSwapOption::empty());
+        let mut p = ModelPicker::new(models.clone(), endpoints);
         p.open("");
         assert_eq!(p.last_spec_count, 0);
 
@@ -266,7 +296,8 @@ mod tests {
         models.store(Some(Arc::new(vec![
             "anthropic/claude-sonnet-4-20250514".into(),
         ])));
-        let mut p = ModelPicker::new(models.clone());
+        let endpoints = Arc::new(ArcSwapOption::empty());
+        let mut p = ModelPicker::new(models.clone(), endpoints);
         p.open("");
 
         p.handle_key(key(KeyCode::Char('o')));
@@ -288,7 +319,8 @@ mod tests {
 
     #[test]
     fn open_preselects_current_model() {
-        let mut p = ModelPicker::new(test_models());
+        let (models, endpoints) = test_models();
+        let mut p = ModelPicker::new(models, endpoints);
         p.open("anthropic/claude-opus-4-6-20260101");
         let action = p.handle_key(key(KeyCode::Enter));
         assert!(
@@ -298,15 +330,30 @@ mod tests {
 
     #[test]
     fn parse_model_entry_valid() {
-        let entry = parse_model_entry("anthropic/claude-sonnet-4-20250514").unwrap();
-        assert_eq!(entry.id, "claude-sonnet-4-20250514");
+        let entry = parse_model_entry("anthropic/claude-sonnet-4-20250514", None).unwrap();
+        assert_eq!(entry.label, "claude-sonnet-4-20250514");
         assert_eq!(entry.provider_display, "Anthropic");
         assert!(!entry.tier.is_empty());
     }
 
     #[test]
     fn parse_model_entry_no_slash() {
-        assert!(parse_model_entry("no-slash").is_none());
+        assert!(parse_model_entry("no-slash", None).is_none());
+    }
+
+    #[test]
+    fn parse_model_entry_copilot_with_endpoint() {
+        let mut map = HashMap::new();
+        map.insert("gpt-5-mini".to_string(), "responses".to_string());
+        let entry = parse_model_entry("copilot/gpt-5-mini", Some(&map)).unwrap();
+        assert_eq!(entry.label, "[responses] gpt-5-mini");
+        assert_eq!(entry.spec, "copilot/gpt-5-mini");
+    }
+
+    #[test]
+    fn parse_model_entry_copilot_without_endpoint() {
+        let entry = parse_model_entry("copilot/gpt-5-mini", None).unwrap();
+        assert_eq!(entry.label, "gpt-5-mini");
     }
 
     // Regression: Alt+1/2/3 must work on every provider, not just Ollama.
@@ -314,7 +361,8 @@ mod tests {
     #[test_case(KeyCode::Char('2'), ModelTier::Medium ; "alt_2_medium")]
     #[test_case(KeyCode::Char('3'), ModelTier::Weak   ; "alt_3_weak")]
     fn tier_shortcut_assigns_and_keeps_picker_open(code: KeyCode, want: ModelTier) {
-        let mut p = ModelPicker::new(test_models());
+        let (models, endpoints) = test_models();
+        let mut p = ModelPicker::new(models, endpoints);
         p.open("");
         let action = p.handle_key(alt_key(code));
         assert!(
@@ -327,7 +375,8 @@ mod tests {
 
     #[test]
     fn plain_number_keys_go_to_filter() {
-        let mut p = ModelPicker::new(test_models());
+        let (models, endpoints) = test_models();
+        let mut p = ModelPicker::new(models, endpoints);
         p.open("");
         let action = p.handle_key(key(KeyCode::Char('1')));
         assert!(

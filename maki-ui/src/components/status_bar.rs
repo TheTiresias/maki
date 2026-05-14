@@ -37,6 +37,7 @@ pub struct StatusBarContext<'a> {
     pub mode_label: Cow<'static, str>,
     pub mode_style: Style,
     pub model_id: &'a str,
+    pub copilot_endpoint_tag: Option<&'a str>,
     pub stats: UsageStats<'a>,
     pub auto_scroll: bool,
     pub chat_name: Option<&'a str>,
@@ -160,6 +161,13 @@ impl StatusBar {
                     ctx.model_id.to_string(),
                     theme::current().status_context,
                 ));
+
+                if let Some(tag) = ctx.copilot_endpoint_tag {
+                    right_spans.push(Span::styled(
+                        format!(" [{tag}]"),
+                        theme::current().status_context,
+                    ));
+                }
 
                 if let Some(ref label) = ctx.thinking_label {
                     right_spans.push(Span::styled(

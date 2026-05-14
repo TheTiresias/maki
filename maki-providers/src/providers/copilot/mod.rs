@@ -303,10 +303,20 @@ struct CopilotAuth {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Endpoint {
+pub enum Endpoint {
     ChatCompletions,
     Responses,
     Messages,
+}
+
+impl Endpoint {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::ChatCompletions => "chat",
+            Self::Responses => "responses",
+            Self::Messages => "messages",
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -335,16 +345,26 @@ impl CopilotModel {
     }
 
     fn endpoint(&self) -> Endpoint {
+        let prefer_chat = std::env::var("MAKI_COPILOT_PREFER_CHAT")
+            .is_ok_and(|v| v == "1");
+        if prefer_chat
+            && self
+                .supported_endpoints
+                .iter()
+                .any(|ep| ep == CHAT_COMPLETIONS_PATH)
+        {
+            return Endpoint::ChatCompletions;
+        }
         if self
             .supported_endpoints
             .iter()
-            .any(|endpoint| endpoint == MESSAGES_PATH)
+            .any(|ep| ep == MESSAGES_PATH)
         {
             Endpoint::Messages
         } else if self
             .supported_endpoints
             .iter()
-            .any(|endpoint| endpoint == RESPONSES_PATH)
+            .any(|ep| ep == RESPONSES_PATH)
         {
             Endpoint::Responses
         } else {
@@ -507,6 +527,17 @@ fn guess_endpoint(model_id: &str) -> Endpoint {
     }
 }
 
+pub async fn fetch_copilot_endpoint_map(
+    timeouts: super::Timeouts,
+) -> Result<HashMap<String, String>, AgentError> {
+    let copilot = Copilot::new(timeouts)?;
+    let models = copilot.fetch_models().await?;
+    Ok(models
+        .into_iter()
+        .map(|m| (m.id.clone(), m.endpoint().tag().to_owned()))
+        .collect())
+}
+
 impl Provider for Copilot {
     fn stream_message<'a>(
         &'a self,
@@ -586,6 +617,32 @@ mod tests {
 
         model.supported_endpoints.clear();
         assert_eq!(model.endpoint(), Endpoint::ChatCompletions);
+    }
+
+    #[test]
+    fn prefer_chat_overrides_to_chat_completions() {
+        let model = CopilotModel {
+            id: "claude-sonnet-4.5".into(),
+            policy: None,
+            capabilities: CopilotModelCapabilities {
+                model_type: "chat".into(),
+            },
+            is_chat_default: false,
+            model_picker_enabled: true,
+            supported_endpoints: vec![MESSAGES_PATH.into(), CHAT_COMPLETIONS_PATH.into()],
+        };
+        unsafe { std::env::set_var("MAKI_COPILOT_PREFER_CHAT", "1") };
+        assert_eq!(model.endpoint(), Endpoint::ChatCompletions);
+        unsafe { std::env::remove_var("MAKI_COPILOT_PREFER_CHAT") };
+
+        assert_eq!(model.endpoint(), Endpoint::Messages);
+    }
+
+    #[test]
+    fn endpoint_tag_matches_variant() {
+        assert_eq!(Endpoint::Messages.tag(), "messages");
+        assert_eq!(Endpoint::Responses.tag(), "responses");
+        assert_eq!(Endpoint::ChatCompletions.tag(), "chat");
     }
 
     #[test]

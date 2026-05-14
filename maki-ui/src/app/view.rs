@@ -233,14 +233,22 @@ impl App {
         let chat = &self.chats[render_chat];
         let chat_name = (self.chats.len() > 1).then_some(chat.name.as_str());
         let (mode_label, mode_style) = self.mode_label();
+        let model_spec = chat
+            .model_id
+            .as_deref()
+            .unwrap_or(&self.state.session.model);
+        let endpoints_guard = self.copilot_endpoints.load();
+        let copilot_endpoint_tag: Option<&str> = model_spec
+            .strip_prefix("copilot/")
+            .and_then(|model_id| {
+                endpoints_guard.as_deref().and_then(|map| map.get(model_id)).map(String::as_str)
+            });
         let ctx = StatusBarContext {
             status: &self.status,
             mode_label,
             mode_style,
-            model_id: chat
-                .model_id
-                .as_deref()
-                .unwrap_or(&self.state.session.model),
+            model_id: model_spec,
+            copilot_endpoint_tag,
             stats: UsageStats {
                 usage: &chat.token_usage,
                 global_usage: &self.state.token_usage,

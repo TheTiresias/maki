@@ -13,6 +13,7 @@ pub use model::{
 };
 pub use providers::Timeouts;
 pub use providers::copilot::auth as copilot_auth;
+pub use providers::copilot::fetch_copilot_endpoint_map;
 pub use providers::dynamic;
 pub use providers::openai::auth as openai_auth;
 pub use types::{

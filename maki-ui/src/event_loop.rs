@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ use maki_config::UiConfig;
 use maki_lua::{EventHandle, LuaCommandReader, UiAction};
 use maki_providers::Timeouts;
 use maki_providers::provider::{Provider, fetch_all_models, from_model};
-use maki_providers::{Message, Model};
+use maki_providers::{Message, Model, fetch_copilot_endpoint_map};
 use maki_storage::StateDir;
 use tracing::warn;
 
@@ -75,16 +76,20 @@ pub(crate) struct EventLoop<'t> {
 
 struct BackgroundModels {
     available: Arc<ArcSwapOption<Vec<String>>>,
+    copilot_endpoints: Arc<ArcSwapOption<HashMap<String, String>>>,
     warn_rx: flume::Receiver<String>,
     task: smol::Task<()>,
 }
 
-fn spawn_model_fetch() -> BackgroundModels {
+fn spawn_model_fetch(timeouts: Timeouts) -> BackgroundModels {
     let available: Arc<ArcSwapOption<Vec<String>>> = Arc::new(ArcSwapOption::empty());
     let bg = Arc::clone(&available);
+    let copilot_endpoints: Arc<ArcSwapOption<HashMap<String, String>>> =
+        Arc::new(ArcSwapOption::empty());
+    let ep_bg = Arc::clone(&copilot_endpoints);
     let (warn_tx, warn_rx) = flume::unbounded::<String>();
+    let warn_tx_clone = warn_tx.clone();
     let task = smol::spawn(async move {
-        let warn_tx = warn_tx;
         fetch_all_models(|batch| {
             for w in batch.warnings {
                 let _ = warn_tx.try_send(w);
@@ -97,9 +102,21 @@ fn spawn_model_fetch() -> BackgroundModels {
             bg.store(Some(Arc::new(merged)));
         })
         .await;
+
+        match fetch_copilot_endpoint_map(timeouts).await {
+            Ok(map) => {
+                if !map.is_empty() {
+                    ep_bg.store(Some(Arc::new(map)));
+                }
+            }
+            Err(e) => {
+                let _ = warn_tx_clone.try_send(format!("Copilot endpoint fetch: {e}"));
+            }
+        }
     });
     BackgroundModels {
         available,
+        copilot_endpoints,
         warn_rx,
         task,
     }
@@ -173,7 +190,7 @@ impl<'t> EventLoop<'t> {
         std::thread::spawn(crate::highlight::warmup);
         crate::update::spawn_check();
 
-        let bg = spawn_model_fetch();
+        let bg = spawn_model_fetch(timeouts);
         let storage_writer = Arc::new(StorageWriter::new(storage.clone()));
         let (shell_tx, shell_rx) = flume::unbounded::<ShellEvent>();
 
@@ -205,6 +222,7 @@ impl<'t> EventLoop<'t> {
             session,
             storage,
             bg.available,
+            bg.copilot_endpoints,
             handles.mcp_reader(),
             lua_command_reader,
             Arc::clone(&storage_writer),
